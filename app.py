@@ -1,59 +1,49 @@
 import pandas as pd
 import streamlit as st
 
-# ضبط إعدادات الصفحة
-st.set_page_config(
-    page_title="مشاهير دبي - فاحص الأسعار والمخزون",
-    layout="centered"
-)
-# عرض الشعار (تأكدي من مطابقة اسم الملف في مجلد stock_app)
-try:
-    st.image("logo.png.png", width=140)
-except Exception:
-    try:
-        st.image("logo.png", width=140)
-    except Exception:
-        pass
-
-# عنوان التطبيق
-st.title(" نظام التحقق السريع من الأسعار والمخزون📦")
-st.subheader("شركة مشاهير دبي التجارية - فرع مكة الراشدية")
-st.markdown("---")
-
-# تحميل بيانات المنتجات
-@st.cache_data
+# تحميل البيانات مع تحديث مباشر
+@st.cache_data(ttl=1)
 def load_data():
-    try:
-        df = pd.read_excel("products.xlsx", dtype={"barcode": str})
-        return df
-    except FileNotFoundError:
-        st.error("لم يتم العثور على ملف products.xlsx.")
-        return pd.DataFrame()
+    return pd.read_excel("products.xlsx", dtype={"barcode": str})
 
 df = load_data()
 
-if not df.empty:
-    search_type = st.radio(
-        "اختر طريقة البحث:",
-        ("الباركود", "اسم المنتج"),
-        horizontal=True
-    )
+st.title("شركة مشاهير دبي التجارية - فرع مكة الراشدية")
+st.subheader("فاحص الأسعار والمخزون الذكي")
 
-    query = st.text_input("أدخل نص البحث أو امسح الباركود:")
+# خانة البحث بالباركود أو اسم المنتج
+search_query = st.text_input("🔍 ابحث برقم الباركود أو اسم المنتج:")
 
-    if query:
-        if search_type == "الباركود":
-            results = df[df['barcode'].astype(str).str.contains(query, na=False)]
-        else:
-            results = df[df['product_name'].astype(str).str.contains(query, case=False, na=False)]
-        
-        if not results.empty:
-            st.success(f"تم العثور على {len(results)} منتج")
-            for index, row in results.iterrows():
-                st.markdown(f"### : {row['product_name']}")
-                st.markdown(f"**السعر:** {row['price']} ر.س")
-                st.markdown(f"**الكمية المتاحة في المخازن:** {row['stock']} قطعة")
-                st.markdown(f"**الموقع:** {row['location']}")
-                st.markdown("---")
-        else:
-            st.warning("لم يتم العثور على أي منتج حسب البحث.")
+if search_query:
+    # البحث في الجدول
+    result = df[
+        df["barcode"].astype(str).str.contains(search_query, na=False) |
+        df["name"].astype(str).str.contains(search_query, na=False)
+    ]
+
+    if not result.empty:
+        for index, row in result.iterrows():
+            st.markdown("---")
+            st.write(f"### 📦 اسم المنتج: {row['name']}")
+            st.write(f"💰 **السعر:** {row['price']}")
+            st.write(f"📊 **المخزون الحالي:** {row['stock']}")
+
+            # تحديد الكمية المراد خصمها (مبيعات)
+            sold_qty = st.number_input(
+                "الكمية المباعة:", 
+                min_value=1, 
+                max_value=int(row['stock']), 
+                value=1, 
+                key=f"qty_{index}"
+            )
+
+            # زر تأكيد البيع والخصم
+            if st.button(f"🛒 تأكيد البيع وخصم الكمية", key=f"btn_{index}"):
+                # خصم الكمية من الجدول
+                df.at[index, 'stock'] = int(row['stock']) - int(sold_qty)
+                # حفظ التحديث في ملف الإكسيل
+                df.to_excel("products.xlsx", index=False)
+                st.success(f"تمت العملية بنجاح! المخزون المتبقي الآن: {df.at[index, 'stock']}")
+                st.rerun()
+    else:
+        st.warning("عذراً، المنتج غير موجود في النظام.")
